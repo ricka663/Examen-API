@@ -1,0 +1,183 @@
+Parfait. Voici **le fichier FastAPI complet**, corrigé selon ton besoin (Q1 à Q6 + BONUS avec authentification de base corrigée), prêt à être utilisé :
+
+---
+
+### ✅ `main.py` — version corrigée et complète
+
+```python
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import PlainTextResponse, HTMLResponse
+from pydantic import BaseModel
+from typing import List
+from datetime import datetime
+import base64
+
+app = FastAPI()
+
+# ---------------- Mémoire vive (stockage temporaire) ----------------
+posts_memory = []
+
+# ---------------- Q1 : /ping ----------------
+@app.get("/ping", response_class=PlainTextResponse)
+def ping():
+    return PlainTextResponse(content="pong", status_code=200)
+
+# ---------------- BONUS : /ping/auth avec authentification basique ----------------
+def check_basic_auth(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Basic "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        encoded_credentials = auth_header.split(" ")[1]
+        decoded_bytes = base64.b64decode(encoded_credentials)
+        decoded_credentials = decoded_bytes.decode("utf-8")
+        username, password = decoded_credentials.split(":")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid auth format")
+
+    if username != "admin" or password != "123456":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+@app.get("/ping/auth", response_class=PlainTextResponse)
+def ping_auth(request: Request):
+    check_basic_auth(request)
+    return PlainTextResponse(content="pong", status_code=200)
+
+# ---------------- Q2 : /home ----------------
+@app.get("/home", response_class=HTMLResponse)
+def home():
+    return HTMLResponse(content="<h1>Welcome home!</h1>", status_code=200)
+
+# ---------------- Q3 : Gestion des routes inconnues ----------------
+@app.exception_handler(404)
+def not_found_handler(request: Request, exc):
+    return HTMLResponse(content="<h1>404 NOT FOUND</h1>", status_code=404)
+
+# ---------------- Q4 à Q6 ----------------
+class Post(BaseModel):
+    author: str
+    title: str
+    content: str
+    creation_datetime: datetime
+
+# Q4 : POST /posts
+@app.post("/posts", response_model=List[Post], status_code=201)
+def create_posts(new_posts: List[Post]):
+    posts_memory.extend(new_posts)
+    return posts_memory
+
+# Q5 : GET /posts
+@app.get("/posts", response_model=List[Post])
+def get_posts():
+    return posts_memory
+
+# Q6 : PUT /posts (idempotent par title)
+@app.put("/posts", response_model=List[Post])
+def update_posts(updated_posts: List[Post]):
+    for updated in updated_posts:
+        for i, existing in enumerate(posts_memory):
+            if existing.title == updated.title:
+                if existing != updated:
+                    posts_memory[i] = updated
+                break
+        else:
+            posts_memory.append(updated)
+    return posts_memory
+```
+
+---
+
+### 🧪 Test via Postman (Q7)
+
+Voici les requêtes à tester et capturer :
+
+| Route        | Méthode | Exemple                                                                                                           |
+| ------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `/ping`      | `GET`   | Retourne `"pong"` en texte brut                                                                                   |
+| `/home`      | `GET`   | Retourne HTML `<h1>Welcome home!</h1>`                                                                            |
+| `/notfound`  | `GET`   | Retourne HTML `<h1>404 NOT FOUND</h1>`                                                                            |
+| `/posts`     | `POST`  | JSON : `[{"author": "Liva", "title": "Test1", "content": "Contenu", "creation_datetime": "2025-07-31T10:00:00"}]` |
+| `/posts`     | `GET`   | Retourne tous les posts en mémoire                                                                                |
+| `/posts`     | `PUT`   | Même titre, mais modifie le contenu                                                                               |
+| `/ping/auth` | `GET`   | **Header**: `Authorization: Basic YWRtaW46MTIzNDU2` (= admin:123456)                                              |
+
+---
+
+Souhaitez-tu :
+
+* 📎 Le fichier `.py` prêt à télécharger ?
+* 📁 Un modèle pour organiser les captures Postman dans ton dossier `postman/` ?
+* 💡 Des exemples concrets de données pour les requêtes POST/PUT ?
+
+Je peux te les fournir en un clic.
+
+
+
+
+------------------------------------------------------------------------
+
+
+
+L’erreur que tu rencontres vient de cette ligne dans ta route `GET /ping/auth` :
+
+```python
+def ping_auth(request: Request = Depends(check_basic_auth)):
+```
+
+🔴 **Problème** : FastAPI **n'autorise pas** l'utilisation de `Depends()` pour des paramètres de type `Request`. Tu dois plutôt **accepter `Request` comme argument normal**, **puis appeler ta fonction `check_basic_auth()` dedans manuellement.**
+
+---
+
+✅ Voici **la correction à faire** pour la route `/ping/auth` :
+
+```python
+@app.get("/ping/auth", response_class=PlainTextResponse)
+def ping_auth(request: Request):
+    check_basic_auth(request)  # Appel direct
+    return PlainTextResponse(content="pong", status_code=200)
+```
+
+Et garde bien la fonction `check_basic_auth` telle qu’elle est :
+
+```python
+def check_basic_auth(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Basic "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    encoded_credentials = auth_header.split(" ")[1]
+    decoded_bytes = base64.b64decode(encoded_credentials)
+    decoded_credentials = decoded_bytes.decode("utf-8")
+
+    username, password = decoded_credentials.split(":")
+    if username != "admin" or password != "123456":
+        raise HTTPException(status_code=403, detail="Forbidden")
+```
+
+---
+
+### 🛠 Résumé des modifications
+
+❌ Mauvaise version :
+
+```python
+def ping_auth(request: Request = Depends(check_basic_auth)):
+```
+
+✅ Bonne version :
+
+```python
+def ping_auth(request: Request):
+    check_basic_auth(request)
+```
+
+---
+
+Essaie cette version, puis relance avec :
+
+```bash
+uvicorn main:app --reload
+```
+
+Dis-moi si tu veux que je t’envoie le fichier `main.py` corrigé complet.
